@@ -11,6 +11,6 @@ import static org.junit.Assert.assertEquals;
 public class TestWelcome {
     @Test
     public void testComplete() {
-        assertEquals("welcome", new StringDataBox("welcome", 7).toString());
+        assertEquals("welcome", new StringDataBox("welcome", 10).toString());
     }
 }

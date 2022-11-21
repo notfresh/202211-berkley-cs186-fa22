@@ -345,7 +345,7 @@ class LeafNode extends BPlusNode {
         // pair with key 3 and page id (3, 1).
 
         assert (keys.size() == rids.size());
-        assert (keys.size() <= 2 * metadata.getOrder());
+        assert (keys.size() <= 2 * metadata.getOrder()); // ?? 不是 [d, 2d+1]吗?
 
         // All sizes are in bytes.
         int isLeafSize = 1;
@@ -376,8 +376,24 @@ class LeafNode extends BPlusNode {
         // Note: LeafNode has two constructors. To implement fromBytes be sure to
         // use the constructor that reuses an existing page instead of fetching a
         // brand new one.
+        // Done by larryzzheng 2022-11-21 14:49:14
+        Page page = bufferManager.fetchPage(treeContext, pageNum);
+        Buffer buf = page.getBuffer();
 
-        return null;
+        byte nodeType = buf.get();
+        assert(nodeType == (byte)1);
+        Long len = buf.getLong();
+        Optional<Long> rightSibling = Optional.of(len);
+        List<DataBox> keys = new ArrayList<>();
+        List<RecordId> rids = new ArrayList<>();
+        int n = buf.getInt(); // by larryzzheng
+        for(int i=0; i<n; i++){
+            keys.add(DataBox.fromBytes(buf,metadata.getKeySchema()));
+            rids.add(RecordId.fromBytes(buf));
+        }
+        return new LeafNode(metadata,bufferManager,page,keys, rids, rightSibling,treeContext);
+
+//        return null;
     }
 
     // Builtins ////////////////////////////////////////////////////////////////
