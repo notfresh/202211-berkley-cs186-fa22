@@ -81,8 +81,11 @@ class InnerNode extends BPlusNode {
     @Override
     public LeafNode get(DataBox key) {
         // TODO(proj2): implement
+        int idx = numLessThanEqual(key, this.keys);
+        BPlusNode node = this.getChild(idx);
+        return node.get(key);
 
-        return null;
+        //return null;
     }
 
     // See BPlusNode.getLeftmostLeaf.
@@ -90,16 +93,72 @@ class InnerNode extends BPlusNode {
     public LeafNode getLeftmostLeaf() {
         assert(children.size() > 0);
         // TODO(proj2): implement
-
-        return null;
+        int idx = 0;
+        BPlusNode node = this.getChild(idx);
+        return node.getLeftmostLeaf();
+        // return null;
     }
 
     // See BPlusNode.put.
     @Override
     public Optional<Pair<DataBox, Long>> put(DataBox key, RecordId rid) {
         // TODO(proj2): implement
+        int idx = numLessThanEqual(key, this.keys);
+        BPlusNode node = this.getChild(idx);
+        Optional<Pair<DataBox, Long>> ret =  node.put(key, rid);
+        if(ret.isPresent()){
+            Pair<DataBox, Long> p = ret.get();
+            keys.add(idx, p.getFirst());
+            children.add(idx, p.getSecond());
+            int order = metadata.getOrder();
 
+            if(keys.size() > order * 2){
+                return splitNode();
+            }
+            sync();
+        }
         return Optional.empty();
+
+    }
+
+    private Optional<Pair<DataBox, Long>> splitNode(){
+        /**
+         * keys: 10, 20, 30,  the order is 1
+         * childrenPointers:  101, 999, 23, 40
+         * what will happen if split the InnerNode?
+         *
+         * firstNode:
+         * keys: 10
+         * childrenPointers:  101, 999
+         *
+         * secondNode:
+         * keys: 30
+         * childrenPointers: 23, 40
+         *
+         * the middle push up node:
+         * keys:20
+         *
+         *
+         * the wrong ideas before:
+         * if it's right? the 999 pointer need to be copied twice?
+         * if not, which node should the shared pointer belong to?
+         * let's give it the right node.
+         * */
+        int order = metadata.getOrder();
+        // In the leaf nodes, the keys size = rids size
+        List<DataBox> lKeys = keys.subList(0, order);
+        DataBox pushUpKey = keys.get(order);
+        List<DataBox> rKeys = keys.subList(order+1, keys.size());
+
+        List<Long> lChildren = children.subList(0, order+1);
+        List<Long> rChildren = children.subList(order+1, children.size());
+
+        this.keys = lKeys;
+        this.children = lChildren;
+
+        InnerNode rNode = new InnerNode(metadata, bufferManager, rKeys, rChildren, treeContext);
+        sync();
+        return Optional.of(new Pair<>(pushUpKey,rNode.getPage().getPageNum()));
     }
 
     // See BPlusNode.bulkLoad.
@@ -115,7 +174,8 @@ class InnerNode extends BPlusNode {
     @Override
     public void remove(DataBox key) {
         // TODO(proj2): implement
-
+        LeafNode lf = get(key);
+        lf.remove(key);
         return;
     }
 

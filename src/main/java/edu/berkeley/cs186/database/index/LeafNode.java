@@ -147,23 +147,57 @@ class LeafNode extends BPlusNode {
     @Override
     public LeafNode get(DataBox key) {
         // TODO(proj2): implement
-
-        return null;
+        return this;
+        // return null;
     }
 
     // See BPlusNode.getLeftmostLeaf.
     @Override
     public LeafNode getLeftmostLeaf() {
-        // TODO(proj2): implement
+        // TODO(proj2): implement -> DONE
+        return this;
+        //return null;
+    }
 
-        return null;
+    private Optional<Pair<DataBox, Long>> splitNode(){
+
+        int order = metadata.getOrder();
+        int size = keys.size();
+        // In the leaf nodes, the keys size = rids size
+        List<DataBox> leftKeys = keys.subList(0, order);
+        List<RecordId> leftRids = rids.subList(0, order);
+        List<DataBox> rKeys = keys.subList(order, size);
+        List<RecordId> rRids = rids.subList(order, size);
+        this.keys = leftKeys;
+        this.rids = leftRids;
+        Page newPage = bufferManager.fetchNewPage(treeContext, metadata.getPartNum());
+        LeafNode rNode = new LeafNode(metadata, bufferManager, newPage,rKeys, rRids, rightSibling, treeContext);
+        this.rightSibling = Optional.of(newPage.getPageNum());
+        sync();
+
+        return Optional.of(new Pair<>(rKeys.get(0),newPage.getPageNum()));
     }
 
     // See BPlusNode.put.
     @Override
     public Optional<Pair<DataBox, Long>> put(DataBox key, RecordId rid) {
         // TODO(proj2): implement
+        if(keys.contains(key)){
+            throw new BPlusTreeException("Duplicated Key " + key.toString());
+        }
+        int order = metadata.getOrder();
+        assert (this.keys.size() <= order * 2);
+        int idx = InnerNode.numLessThanEqual(key, keys);
 
+        // TODO sorting of the binding keys and rids needed!
+        this.keys.add(idx, key);
+        this.rids.add(idx, rid);
+
+        if(this.keys.size() > order * 2){
+            // do split
+            return splitNode();
+        }
+        sync();
         return Optional.empty();
     }
 
@@ -173,6 +207,7 @@ class LeafNode extends BPlusNode {
             float fillFactor) {
         // TODO(proj2): implement
 
+
         return Optional.empty();
     }
 
@@ -180,7 +215,12 @@ class LeafNode extends BPlusNode {
     @Override
     public void remove(DataBox key) {
         // TODO(proj2): implement
-
+        if(keys.contains(key)){
+            int idx = keys.indexOf(key);
+            keys.remove(idx);
+            rids.remove(idx);
+            sync();
+        }
         return;
     }
 
@@ -345,7 +385,7 @@ class LeafNode extends BPlusNode {
         // pair with key 3 and page id (3, 1).
 
         assert (keys.size() == rids.size());
-        assert (keys.size() <= 2 * metadata.getOrder()); // ?? 不是 [d, 2d+1]吗?
+        assert (keys.size() <= 2 * metadata.getOrder()); // ?? not [d, 2d+1]?
 
         // All sizes are in bytes.
         int isLeafSize = 1;
@@ -376,6 +416,9 @@ class LeafNode extends BPlusNode {
         // Note: LeafNode has two constructors. To implement fromBytes be sure to
         // use the constructor that reuses an existing page instead of fetching a
         // brand new one.
+
+        // ?? why? because the pageNum is given
+
         // Done by larryzzheng 2022-11-21 14:49:14
         Page page = bufferManager.fetchPage(treeContext, pageNum);
         Buffer buf = page.getBuffer();

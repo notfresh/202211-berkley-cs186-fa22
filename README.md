@@ -10,6 +10,10 @@ locking to support concurrent execution of transactions, and database recovery.
 
 Specs for each of the projects will be released throughout the semester at here: [https://cs186.gitbook.io/project/](https://cs186.gitbook.io/project/)
 
+## Time MileStone
+- 2022-11-21 finish proj2 task1
+
+
 ## Overview
 
 In this document, we explain
