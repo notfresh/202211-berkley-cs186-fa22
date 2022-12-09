@@ -171,8 +171,8 @@ class LeafNode extends BPlusNode {
         this.keys = leftKeys;
         this.rids = leftRids;
         Page newPage = bufferManager.fetchNewPage(treeContext, metadata.getPartNum());
-        LeafNode rNode = new LeafNode(metadata, bufferManager, newPage,rKeys, rRids, rightSibling, treeContext);
         this.rightSibling = Optional.of(newPage.getPageNum());
+        LeafNode rNode = new LeafNode(metadata, bufferManager, newPage,rKeys, rRids, rightSibling, treeContext);
         sync();
 
         return Optional.of(new Pair<>(rKeys.get(0),newPage.getPageNum()));
@@ -189,7 +189,6 @@ class LeafNode extends BPlusNode {
         assert (this.keys.size() <= order * 2);
         int idx = InnerNode.numLessThanEqual(key, keys);
 
-        // TODO sorting of the binding keys and rids needed!
         this.keys.add(idx, key);
         this.rids.add(idx, rid);
 
@@ -206,9 +205,31 @@ class LeafNode extends BPlusNode {
     public Optional<Pair<DataBox, Long>> bulkLoad(Iterator<Pair<DataBox, RecordId>> data,
             float fillFactor) {
         // TODO(proj2): implement
+        if(fillFactor <= 0 || fillFactor > 1){
+            throw new IllegalArgumentException("Fail to set fill factor that should be between (0,1]");
+        }
+        int fillLimit = (int)Math.ceil(metadata.getOrder() * 2 * fillFactor);
+        for(int i=keys.size(); i< fillLimit && data.hasNext(); i++){
+            Pair<DataBox, RecordId> p = data.next();
+            keys.add(p.getFirst());
+            rids.add(p.getSecond());
+        }
+        if(!data.hasNext()){
+            sync();
+            return Optional.empty();
+        }
+        Pair<DataBox, RecordId> p = data.next();
+        DataBox rKey = p.getFirst();
+        RecordId rRid = p.getSecond();
+        List<DataBox> rKeys = new ArrayList<>();
+        List<RecordId> rRids = new ArrayList<>();
+        rKeys.add(rKey);
+        rRids.add(rRid);
+        LeafNode rNode = new LeafNode(metadata, bufferManager,rKeys, rRids, rightSibling, treeContext);
+        sync();
 
-
-        return Optional.empty();
+        long rPageNum = rNode.getPage().getPageNum();
+        return Optional.of(new Pair<>(rKey, rPageNum));
     }
 
     // See BPlusNode.remove.

@@ -104,25 +104,45 @@ class InnerNode extends BPlusNode {
     public Optional<Pair<DataBox, Long>> put(DataBox key, RecordId rid) {
         // TODO(proj2): implement
         int idx = numLessThanEqual(key, this.keys);
+        /**
+         * if the keys list is [] that is empty, the idx will be 0
+         * but there will not be a child node?
+         *
+         * what will happen if the idx is bigger that the children size?
+         *
+         * */
+
         BPlusNode node = this.getChild(idx);
         Optional<Pair<DataBox, Long>> ret =  node.put(key, rid);
         if(ret.isPresent()){
             Pair<DataBox, Long> p = ret.get();
             keys.add(idx, p.getFirst());
-            children.add(idx, p.getSecond());
+            // the children size is 1 bigger than the keys size
+            /**
+             *     p1(13)p2
+             *    /        \
+             * (2,3,5,7)  (14,16)
+             * insert 8
+             *
+             * after split
+             * the nodes are (2,3,5) (7, 8), the copy up key is 7
+             * */
+            children.add(idx+1, p.getSecond());
             int order = metadata.getOrder();
 
             if(keys.size() > order * 2){
-                return splitNode();
+                return splitNode(order);
             }
             sync();
         }
         return Optional.empty();
-
     }
 
-    private Optional<Pair<DataBox, Long>> splitNode(){
+    private Optional<Pair<DataBox, Long>> splitNode(int splitLen){
         /**
+         * ========================
+         * for the common insertion:
+         * which the keys is already over loaded(max valid load quantity is 2)
          * keys: 10, 20, 30,  the order is 1
          * childrenPointers:  101, 999, 23, 40
          * what will happen if split the InnerNode?
@@ -143,15 +163,52 @@ class InnerNode extends BPlusNode {
          * if it's right? the 999 pointer need to be copied twice?
          * if not, which node should the shared pointer belong to?
          * let's give it the right node.
+         *
+         * ========================
+         * for the bulk load insertion:
+         * keys: 10, 20, 30, 40, 50  the order is 2
+         * childrenPointers:  100, 101, 102, 103, 104, 105
+         * what will happen if split the InnerNode?
+         *
+         * one strategy is like this:
+         * firstNode:
+         * keys: 10, 20, 30, 40  => keep the interior node full!
+         * childrenPointers: 100, 101, 102, 103, 104
+         *
+         * secondNode:
+         * keys: []
+         * childrenPointers: 106
+         *
+         * the middle push up node:
+         * keys: 50
+         *
+         * another strategy is like this:
+         * firstNode:
+         * keys: 10, 20,  => keep the interior node half full!
+         * childrenPointers: 100, 101, 102,
+         *
+         * secondNode:
+         * keys: 40, 50
+         * childrenPointers: 103, 104, 105
+         *
+         * the middle push up node:
+         * keys: 30
+         *
+         * as the course ask:
+         * https://docs.google.com/presentation/d/1_ghdp60NV6XRHnutFAL20k2no6tr2PosXGokYtR8WwU/edit#slide=id.g93b02f7d9b_0_1420
+         * we choose the second strategy,
+         * don't make the interior node full which will cause too much split
+         *  when comes a common insertion
          * */
         int order = metadata.getOrder();
         // In the leaf nodes, the keys size = rids size
-        List<DataBox> lKeys = keys.subList(0, order);
-        DataBox pushUpKey = keys.get(order);
-        List<DataBox> rKeys = keys.subList(order+1, keys.size());
+        // In the inner nodes, the keys size + 1 = rids size
+        List<DataBox> lKeys = keys.subList(0, splitLen);
+        DataBox pushUpKey = keys.get(splitLen);
+        List<DataBox> rKeys = keys.subList(splitLen+1, keys.size());
 
-        List<Long> lChildren = children.subList(0, order+1);
-        List<Long> rChildren = children.subList(order+1, children.size());
+        List<Long> lChildren = children.subList(0, splitLen+1);
+        List<Long> rChildren = children.subList(splitLen+1, children.size());
 
         this.keys = lKeys;
         this.children = lChildren;
@@ -166,7 +223,20 @@ class InnerNode extends BPlusNode {
     public Optional<Pair<DataBox, Long>> bulkLoad(Iterator<Pair<DataBox, RecordId>> data,
             float fillFactor) {
         // TODO(proj2): implement
+        // the children size is alway larger than 0, means at least one child
+        BPlusNode node = getChild(children.size()-1);
+        Optional<Pair<DataBox, Long>> ret = node.bulkLoad(data, fillFactor);
+        if(ret.isPresent()){
+            Pair<DataBox, Long> p = ret.get();
+            keys.add(p.getFirst()); // add to the last
+            children.add(p.getSecond()); // add to the last too
+            int order = metadata.getOrder();
 
+            if(keys.size() > order * 2){ // split the node
+                return splitNode(order);
+            }
+            sync();
+        }
         return Optional.empty();
     }
 
@@ -186,6 +256,19 @@ class InnerNode extends BPlusNode {
     }
 
     private BPlusNode getChild(int i) {
+        /**
+         *
+         * what will happen if the children is emtpy?
+         * ?? the children size will always 1 larger than the keys size
+         * ?? how to maintain such a numeric relationship ?
+         *
+         * keys 3
+         * children: 100
+         *
+         * what will be if the B+ tree is empty and there comes an key
+         *
+         * */
+
         long pageNum = children.get(i);
         return BPlusNode.fromBytes(metadata, bufferManager, treeContext, pageNum);
     }

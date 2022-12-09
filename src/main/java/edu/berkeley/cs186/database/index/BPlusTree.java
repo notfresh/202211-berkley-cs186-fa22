@@ -204,8 +204,8 @@ public class BPlusTree {
         LockUtil.ensureSufficientLockHeld(lockContext, LockType.NL);
 
         // TODO(proj2): Return a BPlusTreeIterator.
-
-        return Collections.emptyIterator();
+        return new BPlusTreeIterator(root.getLeftmostLeaf(), null);
+        // return Collections.emptyIterator();
     }
 
     /**
@@ -237,8 +237,10 @@ public class BPlusTree {
         LockUtil.ensureSufficientLockHeld(lockContext, LockType.NL);
 
         // TODO(proj2): Return a BPlusTreeIterator.
+        LeafNode lf = root.get(key);
+        return lf.scanGreaterEqual(key); // Hint: there is an existing method to use.
 
-        return Collections.emptyIterator();
+        //return Collections.emptyIterator();
     }
 
     /**
@@ -260,26 +262,20 @@ public class BPlusTree {
         // Use the provided updateRoot() helper method to change
         // the tree's root if the old root splits.
         Optional<Pair<DataBox, Long>> ret = root.put(key, rid);
-        if(!ret.isPresent()){
-            // update the new root
-            List<DataBox> keys = new ArrayList<>();
-            List<Long> children = new ArrayList<>();
-            keys.add(ret.get().getFirst());
-            children.add(ret.get().getSecond());
-            children.add(0, root.getPage().getPageNum());
-            BPlusNode newRoot = new InnerNode(metadata, bufferManager,keys, children, lockContext);
-            root = newRoot;
-
-            metadata.setRootPageNum(newRoot.getPage().getPageNum());
-            metadata.incrementHeight();
-
-            TransactionContext transaction = TransactionContext.getTransaction();
-            if (transaction != null) {
-                transaction.updateIndexMetadata(metadata);
-            }
-
+        if(ret.isPresent()){
+            updateRootOnRet(ret.get());
         }
-        return;
+
+    }
+    private void updateRootOnRet(Pair<DataBox, Long> ret){
+        // update the new root
+        List<DataBox> keys = new ArrayList<>();
+        List<Long> children = new ArrayList<>();
+        keys.add(ret.getFirst());
+        children.add(ret.getSecond());
+        children.add(0, root.getPage().getPageNum());
+        BPlusNode newRoot = new InnerNode(metadata, bufferManager,keys, children, lockContext);
+        updateRoot(newRoot);
     }
 
     /**
@@ -309,7 +305,12 @@ public class BPlusTree {
         // Note: You should NOT update the root variable directly.
         // Use the provided updateRoot() helper method to change
         // the tree's root if the old root splits.
-
+        while(data.hasNext()){
+            Optional<Pair<DataBox, Long>> ret = root.bulkLoad(data, fillFactor);
+            if(ret.isPresent()){
+                updateRootOnRet(ret.get());
+            }
+        }
         return;
     }
 
@@ -444,19 +445,37 @@ public class BPlusTree {
     // Iterator ////////////////////////////////////////////////////////////////
     private class BPlusTreeIterator implements Iterator<RecordId> {
         // TODO(proj2): Add whatever fields and constructors you want here.
+        private LeafNode currentLeafNode;
+        private Iterator<RecordId> currentRecIter;
+
+        public BPlusTreeIterator(LeafNode lf, Iterator<RecordId> iter){
+            currentLeafNode = lf;
+            currentRecIter = iter;
+            if(iter == null){
+                currentRecIter = lf.getRids().iterator();
+            }
+        }
 
         @Override
         public boolean hasNext() {
             // TODO(proj2): implement
-
+            if(currentRecIter.hasNext()){
+                return true;
+            }
+            Optional<LeafNode> sib = currentLeafNode.getRightSibling();
+            if(sib.isPresent()){
+                currentLeafNode = sib.get();
+                currentRecIter = currentLeafNode.getRids().iterator();
+                return currentRecIter.hasNext();
+            }
             return false;
         }
 
         @Override
         public RecordId next() {
             // TODO(proj2): implement
-
-            throw new NoSuchElementException();
+            return currentRecIter.next();
+            //throw new NoSuchElementException();
         }
     }
 }
